@@ -1,0 +1,206 @@
+%====================================================
+
+%2022/11/27 shirayama made 
+% to use this program you need to have the black back ground and white outline
+% image
+% the result data exported by Excel format, and to get the factal number, you have to determin the range and do approximate
+% line.
+% "bunkatsu" is to spilit
+
+%==================================================== input the target imfo
+%                                                       and spilit number.
+
+filename = 'test';
+exp=9;
+%list=[50,100,150,200,250,300];
+%list=[1,2];
+for i=350:25:350
+    list(1,i/25)=i;
+end
+ini=1;
+eend=1;
+tobashi=1;
+%===================================================
+
+disp("====START====")
+
+%===================================================
+%-------------------------- 変数初期化   initialize
+
+clearvars("bunkatsu")
+[~,end_num]=size(list);
+
+for i=1:end_num
+    disp(i)
+    fractal_all=0;
+    ww=1;
+    if list(1,i)<10
+        pic_name = append('_0000',num2str(list(1,i)));
+    elseif list(1,i)<100
+        pic_name = append('_000',num2str(list(1,i)));
+    elseif list(1,i)<1000
+        pic_name = append('_00',num2str(list(1,i)));
+    elseif list(1,i)<10000
+        pic_name = append('_0',num2str(list(1,i)));
+    else
+        pic_name = append('_',num2str(list(1,pic)));
+    end
+    result_all=zeros(((11-1)/10),3);
+        f=1;
+        image_filename=append(filename,"_cw_",num2str(exp),pic_name,"_edge");
+        %f=430;              %430分割から
+        a=f+500;             %←幅　480分割まで
+        b=1;
+        bunkatsu=zeros(1,(a-f+1));
+        for g=f:a
+            bunkatsu(1,b)=g;
+            b=b+1;
+        end
+        bunkatsu=transpose(bunkatsu);   %転置
+        [num_bunkatsu,w]=size(bunkatsu);
+            
+        num_box=zeros(num_bunkatsu,1);
+        length=zeros(num_bunkatsu,1);
+        length_num=zeros(num_bunkatsu,1);
+            
+        %-------------------------- open the image data
+    
+        file = fullfile(filename,num2str(exp),append(image_filename,".tif"));
+        image = imread(file);
+        image=im2double(image);
+        image=imbinarize(image,0.1);
+        image=imcomplement(image); 
+            
+        figure(1),imshow (image),title("target")
+            
+        %-------------------------- 写真の縦横のpicel数計算 count the image pixcels
+            
+        [numrows,numcols]=size(image);
+           
+        %-------------------------- end preprocessing
+        %=======================================================================    
+        %-------------------------- ↓　main job
+        target=zeros(bunkatsu_num,7);
+        for num=1:num_bunkatsu
+            disp(num)
+            bunkatsu_num=bunkatsu(num,1);
+            num_box_each=0;
+            ex=0;
+                
+            %---------------------------------  make the spilit coordinate 
+            %                                   分割する座標を作成
+            row=zeros(bunkatsu_num+1,1);
+            cols=zeros(bunkatsu_num+1,1);
+            
+            row(1,1)=1;
+            row(bunkatsu_num+1,1)=numrows;
+            cols(1,1)=1;
+            cols(bunkatsu_num+1,1)=numcols;
+            
+            for b=1:bunkatsu_num-1
+                for a=1:bunkatsu_num-1
+                    row(b+1,1)=floor(b*(numrows/bunkatsu_num))+1;
+                    cols(a+1,1)=floor(a*(numcols/bunkatsu_num))+1;
+                end
+            end
+                
+            %--------------------------------- count the boxes
+            
+            for b=1:bunkatsu_num
+                ex=0;
+                for a=1:bunkatsu_num
+                    ex=0;
+                    row_ini=row(b,1);
+                    row_end=row(b+1,1);
+                    cols_ini=cols(a,1);
+                    cols_end=cols(a+1,1);
+            
+                    image_part=image(row_ini:row_end,cols_ini:cols_end);
+                        
+                    S=sum(image_part,"all");
+            
+                    if S>0
+                        num_box_each=num_box_each+1;
+                    end
+                end
+            end
+            target(num,1)=numrows/bunkatsu_num;
+            target(num,2)=num_box_each;
+            target(num,3)=num_box_each.*(numrows/bunkatsu_num);
+        end
+        target(:,4)=log10(target(:,1));
+        target(:,5)=log10(target(:,2));
+        target(:,6)=log10(target(:,3));
+       
+    %-------------------------- データを郡に分ける
+        ini=1;
+        
+        figure(2),plot(target(:,4),target(:,5),'mo'),title('length & numbox')
+        target(target(:,4)>=1,:)=[];   %box size log10が1以上の行は消す
+        figure(2),plot(target(:,4),target(:,5),'mo'),title('length & numbox')
+
+        [roww,~]=size(target);
+        for k=1:roww-1
+            if target(k+1,5)-target(k,5)>0.1
+                y_haba=(target(k+1,5)-target(k,5))*0.8/2;
+            end
+        end
+
+        for k=1:roww
+            if k==1
+                target(7,1)=1;
+                y_kijyun=target(1,5);
+            else
+                for l=-50:50
+                    if y_kijyun+((2*l)*y_haba)-y_haba<target(k,5) && target(k,5)<=y_kijyun+((2*l)*y_haba)+y_haba
+                        target(k,7)=target(k-1,7)+l;
+                        y_kijyun=target(k,5);
+                        break
+                    end
+                end
+            end
+        end
+        [Y,I]=sort(target(:,7));
+        target=target(I,:);
+        [sort_target,I]=sort(target);
+        
+        atai=unique(target(:,7));
+        size_atai=size(atai);
+        
+        target_tyusyutsu(sort_target(:,7)~=size_atai(2,:),:)=[];
+        figure(1),plot(target_tyusyutsu(:,4),target_tyusyutsu(:,5),'mo'),title('length & numbox')
+
+    %-------------------------- 結果ファイル書き込み  export data by ".xlsm"
+    
+        resultfile=fullfile(filename,num2str(exp),[filename '_cw_' num2str(exp) pic_name '_' num2str(f) '_fractal.xlsx']);
+        writematrix("number of box",resultfile,'Range','B1')
+        writematrix("box_length(pixcel)",resultfile,'Range','A1')
+        writematrix("box_length*number of box",resultfile,'Range','C1')
+        writematrix("log number of box",resultfile,'Range','E1')
+        writematrix("log box_length(pixcel)",resultfile,'Range','D1')
+        writematrix("log length_num_log10",resultfile,'Range','F1')
+        
+        writematrix(num_box,resultfile,'Range','B2')
+        writematrix(length,resultfile,'Range','A2')
+        writematrix(length_num,resultfile,'Range','C2')
+        writematrix(num_box_log10,resultfile,'Range','E2')
+        writematrix(length_log10,resultfile,'Range','D2')
+        writematrix(length_num_log10,resultfile,'Range','F2')
+        
+        writematrix("fractal number D3",resultfile,'Range','G1')
+        writematrix(1-p(1),resultfile,'Range','G2')
+        ww=ww+1;
+        
+        fractal_all=fractal_all+(-p(1));
+
+    
+    fractal_all=fractal_all/18;
+    resultfile=fullfile(filename,num2str(exp),[filename '_cw_' num2str(exp) pic_name,'_fractal_all.xlsx']);
+    writematrix('D2',resultfile,'Range','A1')
+    writematrix('D3',resultfile,'Range','B1')
+    writematrix(fractal_all,resultfile,'Range','A2')
+    writematrix(fractal_all+1,resultfile,'Range','A2')
+end
+%===================================================================
+clearvars("fractal_result")
+disp("==== END ====")
