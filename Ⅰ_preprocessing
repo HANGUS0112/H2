@@ -1,0 +1,42 @@
+%映像を画像にするソフトである．画像枚数はnumber_of_photos.txtに書き込んでいる．
+%This software converts images to pictures. 
+%The number of images is written in number_of_photos.txt.
+%by shirayama　20220605
+
+clear;
+%% *******************INPUTS FROM THE RESEARCHER***************
+
+%input the correct folder name. The folder name must be same as general file name
+filename = '';
+
+%input the serial number of the final experiment
+ini_exp =1;
+end_exp =1;
+
+%==========================================================================
+for exp=ini_exp :end_exp
+    Videofile = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '.avi']);
+    Videoframe = VideoReader(Videofile);
+    ii = 0;
+    while hasFrame(Videoframe)
+        eachframe = readFrame(Videoframe);
+        if ii<10
+            %fullname = fullfile(filename,[filename '_' num2str(exp)], [filename '_' num2str(exp) '_0000' sprintf('%d',ii) '.tif']);
+            fullname = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_0000' sprintf('%d',ii) '.tif']);
+        elseif ii<100
+            fullname = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_000' sprintf('%d',ii) '.tif']);
+        elseif ii<1000
+            fullname = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_00' sprintf('%d',ii) '.tif']);
+        elseif ii<10000
+            fullname = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_0' sprintf('%d',ii) '.tif']);
+        else
+            fullname = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_' sprintf('%d',ii) '.tif']);
+        end
+        ii = ii+1;
+        disp(['sch_' num2str(exp) '_' num2str(ii)])
+        imwrite(eachframe,fullname)
+    end
+    ii=ii-1;
+    writematrix(ii,fullfile(filename,num2str(exp), 'number_of_photo.txt'));
+end
+disp '************************* END ***************************'
