@@ -1,0 +1,312 @@
+%This Matlab script reads the image .tif files inside each folder and obtains the buring
+%velocity of the mixture
+%By Okafor 2016/01/06
+%Updated 2016/01/27 - the code reads the video files, converts them to tif
+%images and calculates the buring velocity
+%Updated 2016/06/27 to include an adjustment for background image contrast and the gray threshold
+%updated 2022/07/19 filename Five-digit number representing the filename
+%by shirayama
+
+
+clear;
+%% *******************INPUTS FROM THE RESEARCHER***************
+disp '************************ START **************************'
+
+%input the correct folder name. The folder name must be same as general file name
+filename = '';
+
+%input the serial number of the final experiment
+exp = 1;
+
+%initial image_number
+ini_image=35; %
+
+%input a number for adjusting the gray threshold. A value less than one
+%ensures that the flame edge is more clearly traced 
+contrast=1.0;    %2.5 contrast
+
+%可視化範囲の閾値
+AdjGray = 0.22; %0.3
+hani=25;       %15  ←これを変更して可視化範囲を決めろ
+
+%Flame Threshold
+%火炎の閾値
+Adjframe = 0.307;    %0.230 下げると火炎のみになる
+
+%Plug Threshold
+%プラグの閾値
+Adjplug=0.385;        %0.5　上げるとプラグのみになる
+
+%the number of imdilate number
+%Number of times to fatten the plug
+%プラグを太らせる回数
+boutyou=30;         %20
+
+%bwareaopen
+%この値以下の白の集まりを消す
+bwareaopen_num_flame=300;    %閾値をいくら変えても火炎が現れない時はこの値が大きすぎる可能性がある
+bwareaopen_num_plug=300;
+
+% handmade 1 is ON 0 is OFF
+%手書きONなら1　OFFなら0
+handmade=0;
+
+%the part surrounded by flame is treated as a flame
+%火炎に囲まれた部分を火炎とする
+%ONなら1 OFFなら0
+flame_closer=1;
+
+%中心からこのpixcel以上は強制的に火炎じゃない判定にする
+%Force the pixels that are more than this pixel from the center to be judged as not flame
+RR=300;   %300
+
+%input the pixel resolution
+Rez = 768;
+
+
+
+%==========================================================
+    %======================================================  0枚目
+    %====================================================== at before combusion
+    
+    disp('背景の写真を読み込みます read the black back image')
+    
+    file = fullfile(filename,num2str(exp), [filename '_cw_' num2str(exp) ]);
+
+    back_image = imread([file '_00000.tif']);
+
+    back_ground_image=rgb2gray(back_image);   %グレースケールに変更
+
+    back_ground_image=im2double(back_ground_image);
+
+    disp('背景グレースケール化終了 ,made back ground image gray scale')
+
+    %------------------------------------------------------ 上下の明るさをそろえる Match the brightness of the top and bottom
+    pic_bright_colum=zeros(Rez,1);
+    for h=1 : Rez
+        pic_bright_colum(h,1)=sum(back_ground_image(h,1:Rez));          %各行の明るさをしらべるために各行の要素をすべて足し算
+    end                                                                 %Add up all the elements in each row to find the brightness of each row
+    
+    pic_bright_colum_max=max(pic_bright_colum);                         %最大の明るさの行の値を知る
+                                                                        %Know the value of the maximum brightness row
+
+    adj_pic_bright_colum=pic_bright_colum_max./pic_bright_colum;        %それぞれの行が最大の明るさと同じになるように何倍かする
+                                                                        %Multiply by a number so that each row is equal to the maximum brightness
+
+    adj_pic_bright_colum=repmat(adj_pic_bright_colum,1,Rez);            %正方行列にする
+                                                                        %make a square matrix
+    disp('左右明るさ調整行列算出完了 ,Left-right brightness adjustment matrix calculation completed')
+
+    %------------------------------------------------------- 左右の明るさをそろえる Match the brightness of the left and right sides
+    pic_bright_row=zeros(1,Rez);
+    for g=1 : Rez
+        pic_bright_row(1,g)=sum(back_ground_image(1:Rez,g));            %各列の明るさをスラベルために各列の要素をすべて足し算
+    end                                                                 %Add up all the elements in each column to slabel the brightness of each column
+    
+    pic_bright_row_max=max(pic_bright_row);                             %最大の明るさの列の値を知る
+                                                                        %Know the value of the maximum brightness column
+
+    adj_pic_bright_row=pic_bright_row_max./pic_bright_row;              %それぞれの列が最大の明るさと同じになるように何倍かする
+                                                                        %Multiply by a number so that each column is equal to the maximum brightness
+
+    adj_pic_bright_row=repmat(adj_pic_bright_row,Rez,1);                %正方行列にする
+                                                                        %make a square matrix
+
+    disp('上下明るさ調整行列算出完了 ,Top and bottom brightness adjustment matrix calculation completed')
+    %------------------------------------------------------- 解析領域
+    back_ground_image=imbinarize(back_ground_image,AdjGray);
+    imshow(back_ground_image)
+    upper_level=1;
+    lower_level=1;
+    for h=1:Rez
+        pic_bright_colum(h,1)=sum(back_ground_image(h,1:Rez));            %各列の明るさをスラベルために各列の要素をすべて足し算
+    end
+
+    for h=2 : Rez-1
+        if pic_bright_colum(h,1)-pic_bright_colum(h-1,1)>hani
+            upper_level=h;
+            break
+        end
+    end
+    for h=Rez-100:-1:1
+        if pic_bright_colum(h-1,1)-pic_bright_colum(h,1)>hani
+            lower_level=h;
+            break
+        end
+    end
+    kashikahani=zeros(Rez:Rez);
+    for h=upper_level:lower_level
+        for g=1:Rez
+            kashikahani(h,g)=1;
+        end
+    end
+    kashikahani=im2uint8(kashikahani);
+    back_ground_image=im2uint8(back_ground_image);
+    figure(1),imshow(labeloverlay(back_ground_image,kashikahani)),title("可視化範囲")
+
+%------------------------------------------------------ 
+%====================================================== 解析対象 target
+answer2=questdlg('可視化範囲ok?','CHECK','Yes','No','Yes');
+switch answer2
+    case 'Yes'
+
+    disp('解析対象の写真を読み込みます read the target image')
+    numImg=readmatrix(fullfile(filename,num2str(exp), 'number_of_cw_photo.txt'));   %read the number_of_photo
+    for number_image=ini_image : numImg
+        if number_image<10
+            num=['0000' num2str(number_image)];
+        elseif number_image<100
+            num=['000' num2str(number_image)];
+        elseif number_image<1000
+            num=['00' num2str(number_image)];
+        elseif number_image<10000
+            num=['0' num2str(number_image)];
+        else
+            num=num2str(number_image);
+        end
+        disp (num)
+    
+    %---------------    
+        original_image = imread([file '_' num '.tif']);
+    
+        if handmade==1    % Fill the flame surface to F_ini by yourself.　で自分で火炎を塗る
+    
+            figure(1),imshow (original_image),title("original plug image")
+            original_image=original_image.*contrast;
+            original_image=im2double(original_image);
+            original_image=im2gray(original_image);
+            figure(1111),imshow(original_image),title('初期の火炎を丁寧に囲んでね')
+            h=drawfreehand;
+            h.FaceAlpha=1;
+            image = createMask(h);   %chenge the pic black and white 囲まれた部分を二値化してる
+            close
+            target=original_image;
+    
+        else       %F_ini枚目以降を勝手に二値化
+            
+            processing_image=rgb2gray(original_image);                          %グレースケール化 make it gray scale
+            processing_image=im2double(processing_image);                       %画像を数字にする   image to number
+        
+            processing_image=processing_image.*adj_pic_bright_colum;            %上下の明るさを合わせる    adjust image 
+            processing_image=processing_image.*adj_pic_bright_row;              %左右の明るさを合わせる    adjust image
+        
+            processing_image=processing_image.*contrast;                        %コントラスト調整   Contrast adjustment
+            processing_image=imsharpen(processing_image);                       %画像シャープにする  make image sharp
+        
+            target=processing_image;                                            %後で比較する用  for compare
+            figure(1),imshow (imresize(original_image,[Rez/4 Rez/4])),title("original plug image")
+            figure(2),histogram(imresize(target,[Rez/4 Rez/4])),title("histogram")
+         
+        %---------------                                %AdjGray以下なら火炎  Flame if less than AdjGray
+            
+            frame_image=processing_image;
+            frame_image=wiener2(frame_image,[8,8]);     %ノイズ除去
+                                                        %Noise reduction
+            for a=1 :Rez                                
+                for b=1 : Rez
+                    if frame_image(a,b)<Adjframe
+                        frame_image(a,b)=1;
+                    else
+                        frame_image(a,b)=0;
+                    end
+                end
+            end
+            for a=1 : Rez
+                for b=1:Rez
+                    if ((a-Rez/2)^2+(b-Rez/2)^2)^0.5>RR
+                        frame_image(a,b)=0;     %0:火炎じゃない 1:火炎
+                    end
+                end
+            end
+       
+            frame_image=bwareaopen(frame_image,bwareaopen_num_flame);
+            frame_image=im2uint8(frame_image);
+            frame_image=frame_image.*kashikahani;
+            figure(3),imshow(imresize(frame_image,[Rez/4 Rez/4])),title("flame image")
+            
+            frame_image=im2double(frame_image);
+            
+        %----------------                               %Adjplug以上ならプラグ　Plug if more than Adjplug
+        
+            plug_image=processing_image;
+            
+            for a=1 :Rez
+                for b=1 : Rez
+                    if plug_image(a,b)>Adjplug
+                        plug_image(a,b)=1;
+                    else
+                        plug_image(a,b)=0;
+                    end
+                end
+            end
+    
+            for a=1 : Rez
+                for b=1:Rez
+                    if ((a-Rez/2)^2+(b-Rez/2)^2)^0.5>RR
+                        plug_image(a,b)=0;
+                    end
+                end
+            end 
+        
+            plug_image=bwareaopen(plug_image,bwareaopen_num_plug);
+            figure(4),imshow (imresize(plug_image,[Rez/4,Rez/4])),title("original plug image")
+        
+            se = strel('disk',1,8);                                         %プラグが少し細いので太らせる meke the plug image fat
+            for a=1:boutyou
+                plug_image=imdilate(plug_image,se);
+            end
+            
+            plug_image=bwareaopen(plug_image,bwareaopen_num_plug);
+            plug_image=imfill(plug_image,"holes");
+            %figure(5),imshow (imresize(image_bw,[Rez/2 Rez/2])),plug_image),title("fat plug image")
+    
+        %---------------   add plug image frame image 
+    
+            X=plug_image.*frame_image;                                      %プラグの場所と火炎の部分が重なっているところを残す
+                                                                            %Leave the areas where the plugs and the flame overlap.
+            X=bwareaopen(X,100);                                           %火炎の周りの小さい白い部分を消す　Extinguish the small white area around the flame.
+            se=strel('disk',20,8);                                          %塗りつぶす
+            X=imclose(X,se);                                                %fill in
+            X=bwareaopen(X,1);
+            %figure(6),imshow(imresize(image_bw,[Rez/2 Rez/2])),X),title("plug")
+            X=im2double(X);
+            image=imadd(frame_image,X);                                     %プラグ画像と火炎写真を足し算する Add up the plug image and the flame photo.
+            if flame_closer==1
+                image=imfill(image,"holes");                                %火炎で囲まれた部分を火炎にする Make the area surrounded by flames into a flame.
+            end
+            image=bwareaopen(image,bwareaopen_num_flame);
+        end
+    
+        %------------------------------------------------------save pictures
+    
+        imwrite(image,[file '_' num '_bw.tif'])                                                         %火炎に入り込んだ未燃部をなくした写真を保存 save picture
+        
+        BWoutline = bwperim(image);
+        BWoutline2=imcomplement(BWoutline);                                                             %火炎の縁取りだけを保存
+        imwrite(BWoutline2,[file '_' num '_edge.tif'])                                                  %Save only the flame edge
+        figure(7),imshow(BWoutline2),title('outline')
+        
+        Segout = target; 
+        Segout(BWoutline) = 0; 
+        figure(8),imshow(imresize(Segout,[Rez/2 Rez/2])),title('Outlined Original Image b&w')                                  %b&wと火炎を比較した写真を保存
+        imwrite(Segout,[file '_' num '_bw_compare.tif'])                                                %save the compare image flame and edge
+    
+        Segout = original_image; 
+        Segout(BWoutline) = 3000; 
+        figure(9),imshow(Segout),title('Outlined Original Image color')                                %originalと火炎を比較した写真を保存
+        answer=questdlg('OK?','CHECK','Yes','No','Yes');
+        switch answer
+            case 'Yes'
+                imwrite(Segout,[file '_' num '_original_compare.tif'])
+                disp('画像保存終了, save result images completed')
+            case 'No'
+                disp("終了")
+                return
+        end
+    end
+    case 'No'
+        disp("終了")
+        return
+end
+%====================================================== 
+disp '************************* END ***************************'
