@@ -1,0 +1,153 @@
+%====================================================
+
+% 2022/11/27 shirayama made
+% this matlab script major the perimeter length
+% to use this program you need to have the black back ground and white outline
+% image
+% 2023/07/09 ver2 scale pixcel→mm 
+clear;
+%==================================================== input the target info
+%                                                       and pic number.
+filename = '';
+exp=5;
+%list=[14,21,26,34,41,45,48];    %解析したいcwの写真番号(，さえつければ何個でもいい)
+
+%list=zeros(1,j+1);
+j=1;
+for i=19:1:60
+    list(1,j)=i;
+    j=j+1;
+end
+scale=10/46; %mm/pixcel     2023 0.1923mm/pixcel      ←年変わったりカメラの位置が変わったらちゃんと計測して変更しろ
+
+%===================================================
+
+disp("====START====")
+
+%-------------------------- 変数初期化   initialize
+[aaa,end_num]=size(list);
+result_=zeros(end_num:3);
+number_of_tateyoko=0;
+number_of_naname=0;
+for i=1:end_num
+        if list(1,i)<10
+            pic_name = append('_0000',num2str(list(1,i)));
+        elseif list(1,i)<100
+            pic_name = append('_000',num2str(list(1,i)));
+        elseif list(1,i)<1000
+            pic_name = append('_00',num2str(list(1,i)));
+        elseif list(1,i)<10000
+            pic_name = append('_0',num2str(list(1,i)));
+        else
+            pic_name = append('_',num2str(list(1,i)));
+        end
+
+    image_filename=append(filename,"_cw_",num2str(exp),pic_name,"_edge");
+
+    %-------------------------- open the image data
+
+    file = fullfile(filename,num2str(exp),append(image_filename,".tif"));
+    image = imread(file);
+    image=im2double(image);
+    image=imbinarize(image,0.1);
+    image=imcomplement(image); 
+    image = bwperim(image);
+    
+    %-------------------------- 写真の縦横のpicel数計算 count the image pixcels
+        
+    [sizz,~]=size(image);
+    number_of_boxes=sum(image,"all");  %count the black boxes
+    figure(1),imshow (image)
+    
+    %-------------------------- end preprocessing
+    %=======================================================================    
+    %-------------------------- ↓　main job
+    %---- taget image how many white cell is there
+    position=zeros(number_of_boxes,1);
+    j=1;
+    for a=1:sizz
+        for b=1:sizz
+            if image(a,b)==1
+                position(j,1)=a;    %行
+                position(j,2)=b;    %列
+                j=j+1;
+            end
+        end
+    end
+    %---- 上下左右マスク
+    for a=1:number_of_boxes
+        mask_tateyoko=zeros(sizz,sizz);
+        mask_tateyoko(position(a,1)+1,position(a,2))=1;  %上
+        mask_tateyoko(position(a,1)-1,position(a,2))=1;  %下
+        mask_tateyoko(position(a,1),position(a,2)-1)=1;  %左
+        mask_tateyoko(position(a,1),position(a,2)+1)=1;  %右
+        
+        target_tateyoko=image;
+        target_tateyoko=target_tateyoko.*mask_tateyoko;
+        number_of_tateyoko_each=sum(target_tateyoko,"all");
+        position_tateyoko=zeros(number_of_tateyoko_each,2);
+        j=1;
+        for c=1:sizz
+            for d=1:sizz
+                if target_tateyoko(c,d)==1
+                    position_tateyoko(j,1)=c;    %行
+                    position_tateyoko(j,2)=d;    %列
+                    j=j+1;
+                end
+            end
+        end
+
+    %---- 斜め探す
+        target_naname=image;
+        target_naname(position(a,1),position(a,2))=0;
+        mask_naname=zeros(sizz,sizz);
+        mask_naname(position(a,1)+1,position(a,2)+1)=1;  %右上
+        mask_naname(position(a,1)+1,position(a,2)-1)=1;  %右下
+        mask_naname(position(a,1)-1,position(a,2)+1)=1;  %左上
+        mask_naname(position(a,1)-1,position(a,2)-1)=1;  %左下
+        target_naname=target_naname.*mask_naname;
+        mask_tateyoko_tonariau=ones(sizz,sizz);
+        for e=1:number_of_tateyoko_each
+            mask_tateyoko_tonariau(position_tateyoko(e,1)+1,position_tateyoko(e,2))=0; %縦の上
+            mask_tateyoko_tonariau(position_tateyoko(e,1)-1,position_tateyoko(e,2))=0; %縦の下
+            mask_tateyoko_tonariau(position_tateyoko(e,1),position_tateyoko(e,2)+1)=0; %縦の右
+            mask_tateyoko_tonariau(position_tateyoko(e,1),position_tateyoko(e,2)-1)=0; %縦の左
+        end
+        
+        target_naname=target_naname.*mask_tateyoko_tonariau;
+        number_of_naname_each=sum(target_naname,"all"); 
+        
+        number_of_tateyoko=number_of_tateyoko+number_of_tateyoko_each;
+        number_of_naname=number_of_naname+number_of_naname_each;
+    end
+    number_of_tateyoko=number_of_tateyoko/2;
+    number_of_naname=number_of_naname/2;
+    perimeter_length=number_of_naname*2^0.5+number_of_tateyoko;
+    
+    perimeter_length_mm=perimeter_length*scale;
+
+    disp("------------")
+    disp(["picture number" list(1,i)])    
+    disp(["number of boxes", number_of_boxes])
+    disp(["perimeterlength",perimeter_length])
+    disp(["perimeterlength mm",perimeter_length_mm])
+    disp("------------")
+    
+    result_(1,1)=list(1,i);
+    result_(1,2)=number_of_boxes;
+    result_(1,3)=perimeter_length;
+    result_(1,4)=perimeter_length_mm;
+
+    number_of_tateyoko=0;
+    number_of_naname=0;
+
+    %--------------------------- write result
+    result_file = fullfile(filename,num2str(exp), [filename '_cw_' num2str(exp) pic_name,'_perimeter.xlsx']);
+    writematrix('picture number',result_file,'range','A1')
+    writematrix('number_of_boxes',result_file,'range','B1')
+    writematrix('perimerter_length',result_file,'range','C1')
+    writematrix('perimerter_length_mm',result_file,'range','D1')
+    writematrix(result_,result_file,'range','A2')
+end
+disp("==== END ====")
+
