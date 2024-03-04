@@ -1,0 +1,302 @@
+%updated 2023/11/20 火炎の二値化のみのソフトである．start_pic_numを変更することで，
+                   %任意の枚数から閾値を変更して解析を再開できるように変更した．
+                   %The software is for flame binarization only; 
+                   %it has been modified so that the analysis can be restarted by changing the threshold value 
+                   %from any number of pictures by changing "start_pic_num."
+%by shirayama
+
+%% *******************INPUTS FROM THE RESEARCHER***************
+
+%input the correct folder name. The folder name must be same as general file name
+filename = 'isooctane_20_02_340_l0';
+
+%input the serial number of the final experiment
+%解析対象の実験回目
+exp = 1;
+
+%start analysys pic number
+%解析開始枚数(初めて解析する場合は0)
+%Number of pieces to start analyzing (0 if analyzing for the first time)
+start_pic_num=0;
+
+%input a number for adjusting the contract of the background image
+%コントラスト　大きくすると明るくなる
+Contrast =1.0;  %1.2
+
+%input a number for adjusting the gray threshold. A value less than one
+%ensures that the flame edge is more clearly traced 
+%二値化の白黒閾値　大きくするとプラグ映らなくなるけど火炎も映らなくなる．
+AdjGray = 0.070; %0.12
+
+%relative image edge 相対二値化on,off
+%0 is off 1 is on
+relative_edge_switch=0;
+
+%relative edge adjust number
+%相対二値化エッジ閾値
+fudgeFactor = 5.0; 
+
+%Remove the area below this value
+%この値以下pixcelの小さい領域をなくす
+bwareaopen_num=100;
+
+%この値以下pixelの小さい領域をFigure111内でなくす%
+bwareopen_plug=200;
+
+%Figure111でこの値より左の領域を黒く塗りつぶす%
+plug_left =10;
+
+%Figure111でこの値より右の領域を黒く塗りつぶす%
+plug_right = 700;
+
+%何枚目から前の写真を引き継ぐか    ※火炎が浮かない限り0でいい
+takeover_previous_image_ini_num = 0;
+
+%何枚目まで前の写真を引き継ぐか    
+takeover_previous_image_end_num=100000;
+
+%How many initialization flames do you want to fill with your own mouse?
+%何枚初期化炎を自分でマウスで塗りつぶすか
+F_ini=0;
+
+%スケール収縮度合い
+%値が大きいとプラグが短くなる。小さいとプラグが伸びるが窓のふちも出てくる
+%figure1参照
+se_plug_num=10;
+se_flame_area_num=10;
+
+%% *********************processing scale*******************
+disp '************************ START **************************'
+%================== make fat plug image =======================
+file = fullfile(filename,num2str(exp), [filename '_sch_' num2str(exp) '_00000.tif']);
+plug_image_original = imread(file); 
+plug_image_original = imbinarize(plug_image_original,graythresh(plug_image_original)*0.98);
+plug_image_binarize_original=imcomplement(plug_image_original);
+figure(1235),imshow(plug_image_binarize_original)
+file = fullfile(filename,num2str(exp), ['Scale_perfect_circle' num2str(exp) '.tif']);
+imscale= imread(file);
+
+%----解像度の確認
+[numRows,numCols] = size(imscale);
+if numRows==numCols
+    Rez=numRows;
+else
+    msgbox("解像度が縦横で一致しないよ")
+    return            
+end
+%----
+
+Bw=zeros(Rez:Rez);
+image_privious_bw=zeros(Rez:Rez);
+Bw=im2uint8(Bw);
+
+se_plug = strel('disk', se_plug_num);
+imscale_small=imerode(imscale,se_plug);   %plugだけの写真を作るためにscaleを少し小さくしてる
+imscale_small=logical(imscale_small);
+plug_image=plug_image_binarize_original.*imscale_small;
+plug_image=bwareaopen(plug_image,bwareopen_plug);
+%----プラグのイメージから左右の余分な白を塗りつぶす----%
+for i=plug_right:Rez
+    for j=1:Rez
+        plug_image(j,i)=0;
+    end
+end
+for i=1:plug_left
+    for j=1:Rez
+        plug_image(j,i)=0;
+    end
+end
+imshow(plug_image),title("kakakakakak")
+%----ここまで余分な白の塗りつぶし----%
+se = strel('disk',1,8); 
+for a=1:5
+    plug_image=imdilate(plug_image,se);
+end
+figure(1),imshow(imresize(plug_image,[Rez/2 Rez/2])),title('fat plug image 1');
+plug_image=im2uint8(plug_image);
+        
+%================== read number of photo =======================
+        
+numImg=readmatrix(fullfile(filename,num2str(exp), 'number_of_photo.txt'));   %read the number_of_photo
+            
+%% **********************image processing loop***********************
+Bw=im2uint8(Bw);            
+for n = start_pic_num:numImg  % loops through all the images
+    % processing the background image            
+    if n == 0      
+        %disp([filename '_' num2str(exp) '_00000.txt (the background) is being processed...'])
+        file = fullfile(filename,num2str(exp),[filename '_sch_' num2str(exp)]);
+        image_original = imread([file '_00000.tif']);
+        background = image_original.*Contrast;
+        GrayImage = image_original; 
+        GrayImage = imbinarize(GrayImage, graythresh(GrayImage)); %converts gray image to a binary image
+        GrayImage = bwareaopen(GrayImage,500); %removes images with pixels less than 500 from the GrayImage
+        se = strel('disk', 50);
+        GrayImage = imclose(GrayImage, se);
+        GrayImage = imfill(GrayImage, 'holes');
+        Graybackground = GrayImage;
+        imwrite(GrayImage, [file '_00000_bw.tif'])
+        Radius(1,1) = 0;
+                    
+    % processing other images
+    elseif n>0
+        disp([num2str(exp) '_' num2str(n)])
+        
+        %================== make flame fill image =======================
+        %================== 火炎を二値化する =============================
+                    
+        %---- target image number            
+        if n<10
+            num3 = ['0000' sprintf('%d',n)];
+        elseif n<100
+            num3 = ['000' sprintf('%d',n)];
+        elseif n<1000
+            num3 = ['00' sprintf('%d',n)];
+        elseif n<10000
+            num3 = ['0' sprintf('%d',n)];
+        else
+            num3 = ['' sprintf('%d',n)];
+        end
+         %---- privious image number
+        
+        if n-1<10
+            num4 = ['0000' sprintf('%d',n-1)];
+        elseif n-1<100
+            num4 = ['000' sprintf('%d',n-1)];
+        elseif n-1<1000
+            num4 = ['00' sprintf('%d',n-1)];
+        elseif n-1<10000
+            num4 = ['0' sprintf('%d',n-1)];
+        else
+            num4 = ['' sprintf('%d',n-1)];
+        end
+                
+        if n<=F_ini     % Fill the flame surface to F_ini by yourself.　最初F_iniまで自分で火炎を塗る
+            image_original = imread([file '_' num3 '.tif']);
+            figure(100),imshow(image_original),title("3.5")
+            title('初期の火炎を丁寧に囲んでね')
+            h=drawfreehand;
+            h.FaceAlpha=1;
+            image_flame_plug = createMask(h);   %chenge the pic black and white 囲まれた部分を二値化してる
+            close
+        else       % n=F_ini～ read and change to GrayImage　F_ini枚目以降を勝手に二値化
+        %================== 火炎の最大投影範囲 ================
+            file = fullfile(filename,num2str(exp),[filename '_sch_' num2str(exp)]);
+            flame_area_max = imread([file '_00000_bw.tif']);
+            se_flame_area = strel('disk', se_flame_area_num);
+            flame_area_max_small=imerode(flame_area_max,se_flame_area);
+        %================== 絶対的な二値化 ====================
+            file = fullfile(filename,num2str(exp),[filename '_sch_' num2str(exp)]);
+            image_original = imread([file '_' num3 '.tif']);
+            image_original=image_original.*Contrast;                        %コントラスト
+            image_original=imsharpen(image_original);                       %シャープ化
+            background_1=imread([file '_00000.tif']);                       %背景
+            background_1=background_1.*Contrast;                            %背景コントラスト
+            RelativeColor = imsubtract(background_1,image_original);        %背景引き算
+            GrayImage = RelativeColor;
+            image_bw=imbinarize(GrayImage,AdjGray);
+            image_bw=image_bw.*flame_area_max_small;
+            image_bw=bwareaopen(image_bw,bwareaopen_num);
+            figure(2),imshow(imresize(image_bw,[Rez/2 Rez/2])),title('target image binalized　二値化後 2')
+            image_bw=im2uint8(image_bw);
+        %================== find edge  =======================
+        %================== エッジ検出  ==============
+            Bw=zeros(Rez:Rez);
+            Bw=uint8(Bw);
+            if n>1
+                if relative_edge_switch==1
+                    [~,threshold] = edge(image_original,"canny");
+                    BWs1 = edge(image_original,"canny",threshold * fudgeFactor);
+                    BWs1=BWs1.*flame_area_max_small;
+                    BWs1=im2uint8(BWs1);
+                    figure(3),imshow(imresize(BWs1,[Rez/2 Rez/2])),title('relative edge target image 3')
+                    BWs1=im2uint8(BWs1);
+                    %-------------- privious
+                    image_privious = imread([file '_' num4 '.tif']);
+                    image_privious=image_privious.*Contrast;
+                    image_privious=imsharpen(image_privious);
+                    [~,threshold] = edge(image_original,"canny");
+                    BWs2 = edge(image_privious,"canny",threshold * fudgeFactor);
+                    BWs2=BWs2.*flame_area_max_small;
+                    BWs2=im2uint8(BWs2);
+                    figure(4),imshow(imresize(BWs2,[Rez/2 Rez/2])),title('relative edge privious image 4')
+                    BWs2=im2uint8(BWs2);
+                    %-------------- 
+                    Bw=BWs1-BWs2+Bw+image_bw;
+                    se = strel('disk', 2);
+                    Bw = imclose(Bw, se);
+                    Bw = imfill(Bw, 'holes');
+                    num_of_flame_area_now = sum(Bw,"all");
+                    Bw=bwareaopen(Bw,bwareaopen_num);
+                end
+                figure(5),imshow(imresize(Bw,[Rez/2,Rez/2])),title('ralative edge image conpleated 3')
+                Bw=im2uint8(Bw);
+        %================== add flame image and relative flame image ===
+                        
+                relative_absolute_edgw_flame=imadd(Bw,image_bw,'uint8');
+            else
+                relative_absolute_edgw_flame=image_bw;   %not exist the ralative image
+            end
+        
+        %================== add privious bw flame image if need =====
+            
+            if n>=takeover_previous_image_ini_num && n<=takeover_previous_image_end_num 
+                if n>1
+                    image_privious_bw = imread([file '_' num4 '_bw.tif']);
+                    image_privious_bw = im2uint8(image_privious_bw);
+                    image_flame = imadd(relative_absolute_edgw_flame,image_privious_bw,'uint8');
+                    image_flame=imfill(image_flame,"holes");
+                else
+                    image_flame=relative_absolute_edgw_flame;
+                end
+            else
+                image_flame=relative_absolute_edgw_flame;
+            end
+
+        %================== fill plug image  =======================
+        %================== 火炎のなかのplugを塗りつぶす==============
+            
+            if n==0
+                plug_image_now=zeros(Rez:Rez);
+            elseif n>=1
+                image_flame=im2uint8(image_flame);
+                plug_image_now=plug_image.*image_flame;
+                for a=1:10
+                    se = strel('disk', 10,4);  %originally 200     
+                    plug_image_now = imclose(plug_image_now, se);    
+                end
+            end
+            plug_image_now=bwareaopen(plug_image_now,bwareopen_plug);
+            figure(6),imshow(imresize(plug_image_now,[Rez/2 Rez/2])),title('processed plug image 5')
+            plug_image_now=im2uint8(plug_image_now);
+          
+            %================== add flame image and filled plug image ===
+                            
+            image_flame_plug=imadd(image_flame,plug_image_now,'uint8');
+                
+            %================== fill white the add image ================
+            image_flame_plug=imfill(image_flame_plug,"holes");
+            image_flame_plug=bwareaopen(image_flame_plug,bwareaopen_num);
+        end
+    
+        num_of_image_flame_plug = sum(image_flame_plug,"all");
+            
+        if num_of_image_flame_plug <1000
+            image_flame_plug=bwareaopen(image_flame_plug,10);    
+        else
+            image_flame_plug=bwareaopen(image_flame_plug,round(num_of_image_flame_plug*0.1));
+        end                    
+            
+        figure(7),imshow(image_flame_plug),title([num2str(num3) 'completed 6'])
+            
+        image_now=imread([file '_' num3 '.tif']);   %処理前画像
+        figure(8),imshow(labeloverlay(image_now,image_flame_plug)),title([num2str(num3) 'compare result and original 7']);
+            
+        image_flame_plug=im2uint8(image_flame_plug);
+        image_compare=imadd(image_now/2,image_flame_plug/2,'uint8');    %処理前画像と処理後画像を足して処理がうまくいってるか比べている
+                                                                                        %compare
+        imwrite(image_flame_plug,[file '_' num3 '_bw.tif'])
+        imwrite(image_compare,[file '_' num3 '_compare.tif'])        %保存してる
+    end
+end
+disp '************************* END ***************************'
